@@ -22,6 +22,7 @@
 #include <linux/dma-mapping.h>
 #include <linux/module.h>
 #include <linux/of_platform.h>
+#include <linux/spi/spi.h>
 #include <asm/system_info.h>
 #include <asm/mach-types.h>
 #include <asm/mach/arch.h>
@@ -41,10 +42,21 @@
  * physical addresses onto VideoCore memory then the use of 32-bits would be
  * more legitimate.
  */
+#define DMA_MASK_BITS_COMMON 32
+
+#define IRQ_ARMCTRL_START     0
+#define ARM_IRQ0_BASE         64
+#define INTERRUPT_SPI         (ARM_IRQ0_BASE + 16)
+#define IRQ_SPI               (IRQ_ARMCTRL_START + INTERRUPT_SPI)
+
+#define BCM2708_PERI_BASE     0x20000000
+#define GPIO_BASE             (BCM2708_PERI_BASE + 0x200000)
 
 /* command line parameters */
 static unsigned boardrev, serial;
 static unsigned reboot_part = 0;
+
+static unsigned use_dt = 0;
 
 static struct map_desc bcm2708_io_desc[] __initdata = {
 	{
@@ -94,10 +106,76 @@ static struct map_desc bcm2708_io_desc[] __initdata = {
 	 .type = MT_DEVICE}
 };
 
+static struct resource bcm2708_spi_resources[] = {
+	{
+		.start = SPI0_BASE,
+		.end = SPI0_BASE + SZ_256 - 1,
+		.flags = IORESOURCE_MEM,
+	}, {
+		.start = IRQ_SPI,
+		.end = IRQ_SPI,
+		.flags = IORESOURCE_IRQ,
+	}
+};
+
+
+static u64 bcm2708_spi_dmamask = DMA_BIT_MASK(DMA_MASK_BITS_COMMON);
+static struct platform_device bcm2708_spi_device = {
+	.name = "bcm2708_spi",
+	.id = 0,
+	.num_resources = ARRAY_SIZE(bcm2708_spi_resources),
+	.resource = bcm2708_spi_resources,
+	.dev = {
+		.dma_mask = &bcm2708_spi_dmamask,
+		.coherent_dma_mask = DMA_BIT_MASK(DMA_MASK_BITS_COMMON)},
+};
+
+#ifdef CONFIG_BCM2708_SPIDEV
+static struct spi_board_info bcm2708_spi_devices[] = {
+#ifdef CONFIG_SPI_SPIDEV
+	{
+		.modalias = "spidev",
+		.max_speed_hz = 500000,
+		.bus_num = 0,
+		.chip_select = 0,
+		.mode = SPI_MODE_0,
+	}, {
+		.modalias = "spidev",
+		.max_speed_hz = 500000,
+		.bus_num = 0,
+		.chip_select = 1,
+		.mode = SPI_MODE_0,
+	}
+#endif
+};
+#endif
+
 void __init bcm2708_map_io(void)
 {
 	iotable_init(bcm2708_io_desc, ARRAY_SIZE(bcm2708_io_desc));
 }
+
+int __init bcm_register_device(struct platform_device *pdev)
+{
+	int ret;
+
+	ret = platform_device_register(pdev);
+	if (ret)
+		pr_debug("Unable to register platform device '%s': %d\n",
+			 pdev->name, ret);
+
+	return ret;
+}
+
+/*
+ * Use these macros for platform and i2c devices that are present in the
+ * Device Tree. This way the devices are only added on non-DT systems.
+ */
+#define bcm_register_device_dt(pdev) \
+    if (!use_dt) bcm_register_device(pdev)
+
+#define i2c_register_board_info_dt(busnum, info, n) \
+    if (!use_dt) i2c_register_board_info(busnum, info, n)
 
 int calc_rsts(int partition)
 {
@@ -175,6 +253,23 @@ static void __init bcm2708_init_uart1(void)
 	}
 }
 
+#ifdef CONFIG_OF
+static void __init bcm2708_dt_init(void)
+{
+	int ret;
+
+	ret = of_platform_populate(NULL, of_default_bus_match_table, NULL, NULL);
+	if (ret) {
+		pr_err("of_platform_populate failed: %d\n", ret);
+		/* Proceed as if CONFIG_OF was not defined */
+	} else {
+		use_dt = 1;
+	}
+}
+#else
+static void __init bcm2708_dt_init(void) { }
+#endif /* CONFIG_OF */
+
 void __init bcm2708_init(void)
 {
 	int ret;
@@ -192,8 +287,16 @@ void __init bcm2708_init(void)
 
 	bcm2708_init_uart1();
 
+	bcm_register_device_dt(&bcm2708_spi_device);
+
 	system_rev = boardrev;
 	system_serial_low = serial;
+
+#ifdef CONFIG_BCM2708_SPIDEV
+	if (!use_dt)
+	    spi_register_board_info(bcm2708_spi_devices,
+				    ARRAY_SIZE(bcm2708_spi_devices));
+#endif
 }
 
 void __init bcm2708_init_early(void)
