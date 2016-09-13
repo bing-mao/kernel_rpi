@@ -20,7 +20,7 @@
 
 	spi0_cs_pins: spi0_cs_pins {
 		brcm,pins = <8 7>;
-		brcm,function = <1>; /* output */
+		brcm,function = <4>; /* output */
 	};
 
 	i2c0_pins: i2c0 {
@@ -42,6 +42,13 @@
 		brcm,pins = <40 45>;
 		brcm,function = <4>;
 	};
+
+	ads7846_pins: ads7846_pins {
+		brcm,pins = <25>; /* illegal default value */
+		brcm,function = <0>; /* in */
+		brcm,pull = <2>; /* none */
+	};
+
 };
 
 &sdhost {
@@ -60,9 +67,11 @@
 };
 
 &spi0 {
+	compatible = "brcm,bcm2708-spi";
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
 	cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
+	status = "okay";
 
 	spidev0: spidev@0{
 		compatible = "spidev";
@@ -70,6 +79,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		spi-max-frequency = <500000>;
+		status = "disabled";
 	};
 
 	spidev1: spidev@1{
@@ -78,6 +88,27 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		spi-max-frequency = <500000>;
+		status = "disabled";
+	};
+
+	ads7846: ads7846@1 {
+		compatible = "ti,ads7846";
+		reg = <1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ads7846_pins>;
+
+		spi-max-frequency = <500000>;
+		interrupts = <25 2>; /* high-to-low edge triggered */
+		interrupt-parent = <&gpio>;
+		pendown-gpio = <&gpio 25 0>;
+		/* driver defaults */
+		ti,x-min = /bits/ 16 <208>;
+		ti,y-min = /bits/ 16 <288>;
+		ti,x-max = /bits/ 16 <3905>;
+		ti,y-max = /bits/ 16 <3910>;
+		ti,pressure-min = /bits/ 16 <0>;
+		ti,pressure-max = /bits/ 16 <255>;
+		ti,x-plate-ohms = /bits/ 16 <150>;
 	};
 };
 
