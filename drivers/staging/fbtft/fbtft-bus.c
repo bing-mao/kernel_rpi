@@ -207,8 +207,8 @@ int fbtft_write_vmem16_bus9(struct fbtft_par *par, size_t offset, size_t len)
 
 #ifdef __LITTLE_ENDIAN
 		for (i = 0; i < to_copy; i += 2) {
-			txbuf16[i]     = 0x0100 | vmem8[i + 1];
-			txbuf16[i + 1] = 0x0100 | vmem8[i];
+			txbuf16[i]     = 0x0100 | ~vmem8[i + 1];
+			txbuf16[i + 1] = 0x0100 | ~vmem8[i];
 		}
 #else
 		for (i = 0; i < to_copy; i++)
