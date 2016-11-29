@@ -59,6 +59,8 @@
 #include <linux/sizes.h>
 #include <linux/io.h>
 #include <linux/acpi.h>
+#include <linux/of_gpio.h>
+#include <linux/pm_runtime.h>
 
 #define UART_NR			14
 
@@ -182,6 +184,7 @@ struct uart_amba_port {
 	struct pl011_dmatx_data	dmatx;
 	bool			dma_probed;
 #endif
+	int				rts_gpio;
 };
 
 /*
@@ -1180,6 +1183,17 @@ static void pl011_stop_tx(struct uart_port *port)
 	struct uart_amba_port *uap =
 	    container_of(port, struct uart_amba_port, port);
 
+	if (port->rs485.flags & SER_RS485_ENABLED) {
+		int res = (port->rs485.flags & SER_RS485_RTS_AFTER_SEND) ?
+			1 : 0;
+		if (gpio_get_value(uap->rts_gpio) != res) {
+			if (port->rs485.delay_rts_after_send > 0)
+				mdelay(
+				port->rs485.delay_rts_after_send);
+			gpio_set_value(uap->rts_gpio, res);
+		}
+	}
+
 	uap->im &= ~UART011_TXIM;
 	writew(uap->im, uap->port.membase + UART011_IMSC);
 	pl011_dma_tx_stop(uap);
@@ -1200,6 +1214,15 @@ static void pl011_start_tx(struct uart_port *port)
 	struct uart_amba_port *uap =
 	    container_of(port, struct uart_amba_port, port);
 
+	if (port->rs485.flags & SER_RS485_ENABLED) {
+		/* if rts not already enabled */
+		int res = (port->rs485.flags & SER_RS485_RTS_ON_SEND) ? 1 : 0;
+		if (gpio_get_value(uap->rts_gpio) != res) {
+			gpio_set_value(uap->rts_gpio, res);
+			if (port->rs485.delay_rts_before_send > 0)
+				mdelay(port->rs485.delay_rts_before_send);
+		}
+	}
 	if (!pl011_dma_tx_start(uap))
 		pl011_start_tx_pio(uap);
 }
@@ -2358,6 +2381,98 @@ static int pl011_register_port(struct uart_amba_port *uap)
 	return ret;
 }
 
+/* Enable or disable the rs485 support */
+static int
+pl011_config_rs485(struct uart_port *port, struct serial_rs485 *rs485)
+{
+	struct uart_amba_port *uap = container_of(port,
+									struct uart_amba_port, port);
+	int val;
+
+	pm_runtime_get_sync(uap->port.dev);
+
+	/* Disable interrupts from this port */
+	pl011_disable_interrupts(uap);
+
+	/* Clamp the delays to [0, 100ms] */
+	rs485->delay_rts_before_send = min(rs485->delay_rts_before_send, 100U);
+	rs485->delay_rts_after_send  = min(rs485->delay_rts_after_send, 100U);
+
+	/* store new config */
+	port->rs485 = *rs485;
+
+	/*
+	 * Just as a precaution, only allow rs485
+	 * to be enabled if the gpio pin is valid
+	 */
+	if (gpio_is_valid(uap->rts_gpio)) {
+		/* enable / disable rts */
+		val = (port->rs485.flags & SER_RS485_ENABLED) ?
+			SER_RS485_RTS_AFTER_SEND : SER_RS485_RTS_ON_SEND;
+		val = (port->rs485.flags & val) ? 1 : 0;
+		gpio_set_value(uap->rts_gpio, val);
+	} else
+		port->rs485.flags &= ~SER_RS485_ENABLED;
+
+	/* Enable interrupts */
+	pl011_enable_interrupts(uap);
+
+	pm_runtime_mark_last_busy(uap->port.dev);
+	pm_runtime_put_autosuspend(uap->port.dev);
+
+	return 0;
+}
+
+static int pl011_probe_rs485(struct uart_amba_port *uap,
+				   struct device_node *np)
+{
+	struct serial_rs485 *rs485conf = &uap->port.rs485;
+	u32 rs485_delay[2];
+	enum of_gpio_flags flags;
+	int ret;
+
+	rs485conf->flags = 0;
+	uap->rts_gpio = -EINVAL;
+
+	if (!np)
+		return 0;
+
+	if (of_property_read_bool(np, "rs485-rts-active-high"))
+		rs485conf->flags |= SER_RS485_RTS_ON_SEND;
+	else
+		rs485conf->flags |= SER_RS485_RTS_AFTER_SEND;
+
+	/* check for tx enable gpio */
+	uap->rts_gpio = of_get_named_gpio_flags(np, "rts-gpio", 0, &flags);
+	if (gpio_is_valid(uap->rts_gpio)) {
+		ret = devm_gpio_request(uap->port.dev, uap->rts_gpio, "pl011-serial");
+		if (ret < 0)
+			return ret;
+		ret = gpio_direction_output(uap->rts_gpio,
+					    flags & SER_RS485_RTS_AFTER_SEND);
+		if (ret < 0)
+			return ret;
+	} else if (uap->rts_gpio == -EPROBE_DEFER) {
+		return -EPROBE_DEFER;
+	} else {
+		uap->rts_gpio = -EINVAL;
+	}
+
+	if (of_property_read_u32_array(np, "rs485-rts-delay",
+				    rs485_delay, 2) == 0) {
+		rs485conf->delay_rts_before_send = rs485_delay[0];
+		rs485conf->delay_rts_after_send = rs485_delay[1];
+	}
+
+	if (of_property_read_bool(np, "rs485-rx-during-tx"))
+		rs485conf->flags |= SER_RS485_RX_DURING_TX;
+
+	if (of_property_read_bool(np, "linux,rs485-enabled-at-boot-time"))
+		rs485conf->flags |= SER_RS485_ENABLED;
+
+	return 0;
+}
+
 static int pl011_probe(struct amba_device *dev, const struct amba_id *id)
 {
 	struct uart_amba_port *uap;
@@ -2389,6 +2504,12 @@ static int pl011_probe(struct amba_device *dev, const struct amba_id *id)
 	ret = pl011_setup_port(&dev->dev, uap, &dev->res, portnr);
 	if (ret)
 		return ret;
+
+	ret = pl011_probe_rs485(uap, dev->dev.of_node);
+	if (ret < 0)
+		return ret;
+	else
+		uap->port.rs485_config = pl011_config_rs485;
 
 	amba_set_drvdata(dev, uap);
 
