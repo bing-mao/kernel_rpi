@@ -66,6 +66,11 @@
 		brcm,pins = <40 41>;
 		brcm,function = <4>;
 	};
+
+	rpi_display_pins: rpi_display_pins {
+		brcm,pins = <23 24>; /* illegal default value */
+		brcm,function = <1 1>; /* out */
+	};
 };
 
 &sdhost {
@@ -114,6 +119,7 @@
 	pinctrl-names = "default";
 	pinctrl-0 = <&spi0_pins &spi0_cs_pins>;
 	cs-gpios = <&gpio 8 1>, <&gpio 7 1>;
+	status = "okay";
 
 	spidev0: spidev@0{
 		compatible = "spidev";
@@ -121,6 +127,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		spi-max-frequency = <500000>;
+		status = "disabled";
 	};
 
 	spidev1: spidev@1{
@@ -129,6 +136,21 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		spi-max-frequency = <500000>;
+		status = "disabled";
+	};
+
+	rpidisplay: rpi-display@0{
+		compatible = "sitronix,st7789v";
+		reg = <0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&rpi_display_pins>;
+		bgr = <0>;
+		rotate = <90>;
+		spi-max-frequency = <48000000>;
+		txbuflen = <51200>;
+		buswidth = <9>;
+		reset-gpios = <&gpio 23 0>;
+		dc-gpios = <&gpio 24 0>;
 	};
 };
 

@@ -95,7 +95,9 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&rpi_display_pins>;
 		bgr = <0>;
+		rotate = <90>;
 		spi-max-frequency = <48000000>;
+		txbuflen = <51200>;
 		buswidth = <9>;
 		reset-gpios = <&gpio 23 0>;
 		dc-gpios = <&gpio 24 0>;
