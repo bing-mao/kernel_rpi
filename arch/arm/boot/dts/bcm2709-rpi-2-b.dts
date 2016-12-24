@@ -43,6 +43,11 @@
 		brcm,function = <4>;
 	};
 
+	uart_pins: uart_pins {
+		brcm,pins = <17>; /* illegal default value */
+		brcm,function = <1 1>; /* out */
+	};
+
 	rpi_display_pins: rpi_display_pins {
 		brcm,pins = <23 24>; /* illegal default value */
 		brcm,function = <1 1>; /* out */
@@ -62,6 +67,11 @@
 };
 
 &uart0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&uart_pins>;
+	rts-gpio = <&gpio 17 0>;
+	rs485-rts-active-high;
+	rs485-rts-delay = <0 7>;
 	status = "okay";
 };
 
@@ -95,10 +105,11 @@
 		pinctrl-names = "default";
 		pinctrl-0 = <&rpi_display_pins>;
 		bgr = <0>;
+		fps = <100>;
 		rotate = <90>;
 		spi-max-frequency = <48000000>;
-		txbuflen = <51200>;
-		buswidth = <9>;
+		txbuflen = <153600>;
+		buswidth = <8>;
 		reset-gpios = <&gpio 23 0>;
 		dc-gpios = <&gpio 24 0>;
 	};

@@ -52,6 +52,7 @@
  * out as well to avoid duplicate entries.
  */
 enum st7789v_command {
+	RAMCTRL = 0xB0,
 	PORCTRL = 0xB2,
 	GCTRL = 0xB7,
 	VCOMS = 0xBB,
@@ -91,6 +92,7 @@ static int init_display(struct fbtft_par *par)
 
 	/* set pixel format to RGB-565 */
 	write_reg(par, MIPI_DCS_SET_PIXEL_FORMAT, MIPI_DCS_PIXEL_FMT_16BIT);
+	write_reg(par, RAMCTRL, 0x00, 0xF8);
 
 	write_reg(par, PORCTRL, 0x08, 0x08, 0x00, 0x22, 0x22);
 
@@ -161,6 +163,7 @@ static int set_var(struct fbtft_par *par)
 		return -EINVAL;
 	}
 	write_reg(par, MIPI_DCS_SET_ADDRESS_MODE, madctl_par);
+	pr_info("mbing: %s  madctl_par =  %u\n", __func__, madctl_par);
 	return 0;
 }
 

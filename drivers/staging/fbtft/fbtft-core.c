@@ -1299,6 +1299,7 @@ static struct fbtft_platform_data *fbtft_probe_dt(struct device *dev)
 	pdata->bgr = of_property_read_bool(node, "bgr");
 	pdata->fps = fbtft_of_value(node, "fps");
 	pdata->txbuflen = fbtft_of_value(node, "txbuflen");
+	pdata->bgr = fbtft_of_value(node, "bgr");
 	pdata->startbyte = fbtft_of_value(node, "startbyte");
 	of_property_read_string(node, "gamma", (const char **)&pdata->gamma);
 
