@@ -1223,6 +1223,7 @@ static void pl011_start_tx(struct uart_port *port)
 				mdelay(port->rs485.delay_rts_before_send);
 		}
 	}
+
 	if (!pl011_dma_tx_start(uap))
 		pl011_start_tx_pio(uap);
 }
@@ -2389,11 +2390,6 @@ pl011_config_rs485(struct uart_port *port, struct serial_rs485 *rs485)
 									struct uart_amba_port, port);
 	int val;
 
-	pm_runtime_get_sync(uap->port.dev);
-
-	/* Disable interrupts from this port */
-	pl011_disable_interrupts(uap);
-
 	/* Clamp the delays to [0, 100ms] */
 	rs485->delay_rts_before_send = min(rs485->delay_rts_before_send, 100U);
 	rs485->delay_rts_after_send  = min(rs485->delay_rts_after_send, 100U);
@@ -2413,12 +2409,6 @@ pl011_config_rs485(struct uart_port *port, struct serial_rs485 *rs485)
 		gpio_set_value(uap->rts_gpio, val);
 	} else
 		port->rs485.flags &= ~SER_RS485_ENABLED;
-
-	/* Enable interrupts */
-	pl011_enable_interrupts(uap);
-
-	pm_runtime_mark_last_busy(uap->port.dev);
-	pm_runtime_put_autosuspend(uap->port.dev);
 
 	return 0;
 }
